@@ -11,6 +11,7 @@
 
 #include <cstdio>
 #include <csignal>
+#include <ctime>
 #include <string>
 
 #include <bcm2835.h>
@@ -37,7 +38,7 @@ bool is_prom = true; // Sets promiscuous mode. Defaults to true.
 std::string usage = "Usage:\n"
 "    -h, --help       | Show this help message.\n\n"
 "    -g, --ground     | Force ground computer mode. TECS assumes flight computer mode if absent.\n\n"
-"    --test-radio <s> | Run this instance in radio test mode. Must be followed by the test string.\n\n"
+"    --test-radio <s> | Run this instance in radio test mode. May be followed by a custom test string.\n\n"
 "    --modem      <#> | Selects the modem configuration to use. See below. Default 0.\n"
 "    --power      <#> | Set the TX power to use in flight mode. Valid range is 5 - 23. Default 23.\n"
 "    --no-prom        | Disables promiscuous mode. Be careful!\n"
@@ -65,21 +66,22 @@ void sig_handler(int sig) {
 
 void run_rx_test() {
 	int rxd_good = 0;
-	int rxd_bad_address = 0;
-	int rxd_bad_message = 0;
-	int rxd_bad_both = 0;
-	// We're ready to listen for incoming messages.
-	rf95.setModeRx();
-	printf("Mode set to RX! Listening for \"%s\"...\n", test_string.c_str());
+	int rxd_bad_addr = 0;
+	int rxd_bad_data = 0;
+	int rxd_bad_garbage = 0;
+	int rxd_total = 0;
+	
+	printf("Listening for \"%s\"...\n", test_string.c_str());
 
-	while(!exiting) {
-		// We have a IRQ pin, pool it instead reading
+	// Begin the main body of code
+	while (!exiting) {
+		// We have a IRQ pin ,pool it instead reading
 		// Modules IRQ registers from SPI in each loop
 		// Rising edge fired ?
-		if(bcm2835_gpio_eds(RF_IRQ_PIN)) {
+		if (bcm2835_gpio_eds(RF_IRQ_PIN)) {
 			// Now clear the eds flag by setting it to 1
 			bcm2835_gpio_set_eds(RF_IRQ_PIN);
-			//printf("Rising event detect for pin GPIO%d!\n", RF_IRQ_PIN);
+			// printf("Packet Received, Rising event detect for pin GPIO%d\n", RF_IRQ_PIN);
 
 			if (rf95.available()) {
 				// Should be a message for us now.
@@ -96,28 +98,56 @@ void run_rx_test() {
 					continue; // Skip to next iteration of the while loop.
 				}
 
-				if(!strncmp(test_string.data(), (char*)buf, test_string.size())) {
+				rxd_total++;
 
+
+				bool bad_addr = false;
+				bool bad_data = false;
+
+				if(from != RF_FLIGHT_ID || to != RF_GROUND_ID) {
+					bad_addr = true;
 				}
-				
-				printf("RECV [%02db, #%d>#%d, %ddB]: " , len, from, to, rssi);
+
+				if(strncmp(test_string.data(), (char*)buf, test_string.size())) {
+					bad_data = true;
+				}
+
+
+				std::string rx_status = "";
+
+				if(!bad_addr && !bad_data) {
+					rxd_good++;
+					rx_status = "OK";
+				} else if(bad_addr && bad_data) {
+					rxd_bad_garbage++;
+					rx_status = "BAD_GARB";
+				} else if(bad_addr) {
+					rxd_bad_addr++;
+					rx_status = "BAD_ADDR";
+				} else if(bad_data) {
+					rxd_bad_data++;
+					rx_status = "BAD_DATA";
+				}
+
+				printf("RECV %s <%ju> (#%d) [%02db, #%d>#%d, %ddB]: ", rx_status.c_str(), time(NULL), rxd_total, len, from, to, rssi);
 				printbuffer(buf, len);
 				printf("\n");
 			}
 		}
-		
+
 		// Let OS doing other tasks
 		// For timed critical appliation you can reduce or delete
 		// this delay, but this will charge CPU usage, take care and monitor
-		bcm2835_delay(10);
+		bcm2835_delay(5);
 	}
 
-	printf("Testing concluded!\n\nRX'd GOOD: %d\nRX'd BAD_ADDRESS: %d\nRX'd BAD_MESSAGE: %d\nRX'd BAD_BOTH: %d\n\n",
-				rxd_good, rxd_bad_address, rxd_bad_message, rxd_bad_both);
+	printf("Testing concluded!\n\nRX'd GOOD: %d\nRX'd BAD_ADDR: %d\nRX'd BAD_DATA: %d\nRX'd BAD_GARBAGE: %d\nRX'd TOTAL: %d\n\n",
+				rxd_good, rxd_bad_addr, rxd_bad_data, rxd_bad_garbage, rxd_total);
 }
 
 void run_tx_test() {
 	unsigned long last_millis;
+	unsigned int tx_count;
 
 	// This is set so that the first message is fired after one second.
 	last_millis = millis() - (tx_interval - 1000);
@@ -132,7 +162,7 @@ void run_tx_test() {
 			//uint8_t len = sizeof(data);
 			uint8_t len = test_string.size();
 
-			printf("SEND [%02db, #%d>#%d]: ", len, RF_FLIGHT_ID, RF_GROUND_ID);
+			printf("SEND <%ju> (#%d) [%02db, #%d>#%d]: ", time(NULL), tx_count, len, RF_FLIGHT_ID, RF_GROUND_ID);
 			printbuffer(data, len);
 			printf("\n");
 
@@ -148,18 +178,16 @@ void run_tx_test() {
 void setup_radio() {
 	puts("Initializing RFM95 radio module...");
 
-	if(!bcm2835_init()) {
-		fprintf(stderr, "\nERR: bcm2835_init() failed!\n\n");
-		exit(EXIT_FAILURE);
-	}
-
 	//printf("Verify RFM95 pins connected: CS=GPIO%d, IRQ=GPIO%d, RST=GPIO%d", RF_CS_PIN, RF_IRQ_PIN, RF_RST_PIN);
 
 	// Set IRQ Pin as input/pull down.
+	// IRQ Pin input/pull down
 	pinMode(RF_IRQ_PIN, INPUT);
 	bcm2835_gpio_set_pud(RF_IRQ_PIN, BCM2835_GPIO_PUD_DOWN);
+	// Now we can enable Rising edge detection
+	bcm2835_gpio_ren(RF_IRQ_PIN);
 
-	// Pulse a reset to RFM95.
+	// Pulse a reset on module
 	pinMode(RF_RST_PIN, OUTPUT);
 	digitalWrite(RF_RST_PIN, LOW);
 	bcm2835_delay(150);
@@ -171,15 +199,6 @@ void setup_radio() {
 		bcm2835_close();
 		exit(EXIT_FAILURE);
 	}
-
-	// Since we may check IRQ line with bcm_2835 rising edge detection
-	// In case radio already have a packet, IRQ is high and will never
-	// go to low so never fire again
-	// Except if we clear IRQ flags and discard one if any by checking
-	rf95.available();
-
-	// Now we can enable Rising edge detection
-	bcm2835_gpio_ren(RF_IRQ_PIN);
 
 	// Defaults after init are 434.0MHz, 13dBm, Bw = 125 kHz, Cr = 4/5, Sf = 128chips/symbol, CRC on.
 
@@ -204,7 +223,7 @@ void setup_radio() {
 	// Adjust frequency.
 	rf95.setFrequency(RF_FREQUENCY);
 
-	printf("Radio power set to tx_power dBm, frequency set to %3.2fMHz.\n", tx_power, RF_FREQUENCY);
+	printf("Radio power set to %d dBm, frequency set to %3.2fMHz.\n", tx_power, RF_FREQUENCY);
 
 	if(ground_mode) {
 		// Set our node address.
@@ -213,6 +232,9 @@ void setup_radio() {
 
 		// Grab all packets, even ones not addressed to us.
 		rf95.setPromiscuous(is_prom);
+
+		// We're ready to listen for incoming message
+		rf95.setModeRx();
 	} else {
 		// Set our node address.
 		rf95.setThisAddress(RF_FLIGHT_ID);
@@ -256,15 +278,26 @@ void parse_args(int argc, const char* argv[]) {
 
 			if(!strcmp(argv[i], "--test-radio")) {
 				radio_test_mode = true;
-				test_string = argv[i + 1];
+				if(argc > i + 1 && argv[i + 1][0] != '-')
+					test_string = argv[i + 1];
 			}
 
 			if(!strcmp(argv[i], "--modem")) {
-				modem_config = atoi(argv[i + 1]);
+				if(argc > i + 1 && argv[i + 1][0] != '-')
+					modem_config = atoi(argv[i + 1]);
+				else {
+					puts("--modem [i + 1] fail");
+					exit(EXIT_FAILURE);
+				}
 			}
 
 			if(!strcmp(argv[i], "--power")) {
-				tx_power = atoi(argv[i + 1]);
+				if(argc > i + 1 && argv[i + 1][0] != '-')
+					tx_power = atoi(argv[i + 1]);
+				else {
+					puts("--power [i + 1] fail");
+					exit(EXIT_FAILURE);
+				}
 			}
 		}
 	}
@@ -272,11 +305,17 @@ void parse_args(int argc, const char* argv[]) {
 
 int main(int argc, const char* argv[]) {
 	signal(SIGINT, sig_handler);
+	setvbuf(stdout, NULL, _IONBF, 0);
 
 	puts("\nSEDS-UCF - IREC 2018 - Telemetry and Experiment Control System (TECS v0.0)\n");
 
 	parse_args(argc, argv);
 	
+	if(!bcm2835_init()) {
+		fprintf(stderr, "\nERR: bcm2835_init() failed!\n\n");
+		exit(EXIT_FAILURE);
+	}
+
 	setup_radio();
 
 	if(radio_test_mode) {
