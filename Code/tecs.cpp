@@ -27,7 +27,7 @@
 #define RF_FLIGHT_ID 31
 
 bool ground_mode = false; // Select between ground and flight mode.
-bool test_mode = false; // Enables test mode.
+bool radio_test_mode = false; // Enables radio test mode.
 std::string test_string = "aXXYYZZgXXYYZZttPPaaVV"; // The test mode string.
 int tx_interval = 1000; // Interval between message sending in ms.
 int modem_config = 0; // Sets the modem config. See USAGE for more.
@@ -37,10 +37,14 @@ bool is_prom = true; // Sets promiscuous mode. Defaults to true.
 std::string usage = "Usage:\n"
 "    -h, --help       | Show this help message.\n\n"
 "    -g, --ground     | Force ground computer mode. TECS assumes flight computer mode if absent.\n\n"
-"    -t, --test   <s> | Run this instance in test mode. Must be followed by the test string.\n\n"
+"    --test-radio <s> | Run this instance in radio test mode. Must be followed by the test string.\n\n"
+"    --modem      <#> | Selects the modem configuration to use. See below. Default 0.\n"
+"    --power      <#> | Set the TX power to use in flight mode. Valid range is 5 - 23. Default 23.\n"
+"    --no-prom        | Disables promiscuous mode. Be careful!\n"
+/*"    -t, --test   <s> | Run this instance in test mode. Must be followed by the test string.\n\n"
 "    -c, --config <#> | Selects the modem config to use. See below. Default 0.\n"
 "    -x, --power  <#> | Set the TX power to use in flight mode. Valid range is 5 - 23. Default 23.\n"
-"    -p, --no-prom    | Disables promiscuous mode. Be careful!\n"
+"    -p, --no-prom    | Disables promiscuous mode. Be careful!\n"*/
 "\nModem Configurations:\n"
 "    0 -- Bw = 125 kHz,   Cr = 4/5, Sf = 128chips/symbol,  CRC on. Default. Medium speed + medium range.\n"
 "    1 -- Bw = 500 kHz,   Cr = 4/5, Sf = 128chips/symbol,  CRC on. Fast + short range.\n"
@@ -60,9 +64,13 @@ void sig_handler(int sig) {
 }
 
 void run_rx_test() {
+	int rxd_good = 0;
+	int rxd_bad_address = 0;
+	int rxd_bad_message = 0;
+	int rxd_bad_both = 0;
 	// We're ready to listen for incoming messages.
 	rf95.setModeRx();
-	puts("Mode set to RX! Listening...\n" );
+	printf("Mode set to RX! Listening for \"%s\"...\n", test_string.c_str());
 
 	while(!exiting) {
 		// We have a IRQ pin, pool it instead reading
@@ -87,6 +95,10 @@ void run_rx_test() {
 					puts("WARN: RF95 recv failed!\n");
 					continue; // Skip to next iteration of the while loop.
 				}
+
+				if(!strncmp(test_string.data(), (char*)buf, test_string.size())) {
+
+				}
 				
 				printf("RECV [%02db, #%d>#%d, %ddB]: " , len, from, to, rssi);
 				printbuffer(buf, len);
@@ -99,6 +111,9 @@ void run_rx_test() {
 		// this delay, but this will charge CPU usage, take care and monitor
 		bcm2835_delay(10);
 	}
+
+	printf("Testing concluded!\n\nRX'd GOOD: %d\nRX'd BAD_ADDRESS: %d\nRX'd BAD_MESSAGE: %d\nRX'd BAD_BOTH: %d\n\n",
+				rxd_good, rxd_bad_address, rxd_bad_message, rxd_bad_both);
 }
 
 void run_tx_test() {
@@ -207,13 +222,51 @@ void setup_radio() {
 		rf95.setHeaderTo(RF_GROUND_ID);
 	}
 
-	printf("RF95 node initialization OK! @ %3.2fMHz\n", RF_FREQUENCY);
+	printf("RF95 node init OK! @ %3.2fMHz\n", RF_FREQUENCY);
 }
 
 void parse_args(int argc, const char* argv[]) {
 	if(argc < 2) {
 		puts(usage.c_str());
 		exit(EXIT_FAILURE);
+	}
+
+/*
+"    -h, --help       | Show this help message.\n\n"
+"    -g, --ground     | Force ground computer mode. TECS assumes flight computer mode if absent.\n\n"
+"    --test-radio <s> | Run this instance in radio test mode. Must be followed by the test string.\n\n"
+"    --modem      <#> | Selects the modem configuration to use. See below. Default 0.\n"
+"    --power      <#> | Set the TX power to use in flight mode. Valid range is 5 - 23. Default 23.\n"
+"    --no-prom        | Disables promiscuous mode. Be careful!\n"
+*/
+	for(int i = 0; i < argc; i++) {
+		if(argv[i][0] == '-') {
+			if(!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+				puts(usage.c_str());
+				exit(EXIT_SUCCESS);
+			}
+
+			if(!strcmp(argv[i], "-g") || !strcmp(argv[i], "--ground")) {
+				ground_mode = true;
+			}
+
+			if(!strcmp(argv[i], "--no-prom")) {
+				is_prom = false;
+			}
+
+			if(!strcmp(argv[i], "--test-radio")) {
+				radio_test_mode = true;
+				test_string = argv[i + 1];
+			}
+
+			if(!strcmp(argv[i], "--modem")) {
+				modem_config = atoi(argv[i + 1]);
+			}
+
+			if(!strcmp(argv[i], "--power")) {
+				tx_power = atoi(argv[i + 1]);
+			}
+		}
 	}
 }
 
@@ -226,8 +279,14 @@ int main(int argc, const char* argv[]) {
 	
 	setup_radio();
 
-	if(test_mode) {
-		puts("\nEntering test mode...\n");
+	if(radio_test_mode) {
+		puts("\nEntering radio test mode...\n");
+
+		if(ground_mode) {
+			run_rx_test();
+		} else {
+			run_tx_test();
+		}
 	}
 
 	// We should never reach this point in flight conditions.
