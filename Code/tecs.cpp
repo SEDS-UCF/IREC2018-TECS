@@ -4,9 +4,6 @@
  * Flight and ground code has been combined into a single program.
  *
  * Based heavily upon hallard's RadioHead fork and its Raspberry Pi examples.
- *
- * USAGE: TODO
- *
  */
 
 #include <cstdio>
@@ -31,15 +28,17 @@ bool ground_mode = false; // Select between ground and flight mode.
 bool radio_test_mode = false; // Enables radio test mode.
 std::string test_string = "aXXYYZZgXXYYZZttPPaaVV"; // The test mode string.
 int tx_interval = 1000; // Interval between message sending in ms.
-int modem_config = 0; // Sets the modem config. See USAGE for more.
+//int modem_config = 0; // Sets the modem config. See USAGE for more.
 int tx_power = 23; // TX power, valid range is 5 to 23.
-bool is_prom = true; // Sets promiscuous mode. Defaults to true. 
+bool is_prom = true; // Sets promiscuous mode. Defaults to true.
+char r1d = 0x72, r1e = 0x74;
 
 std::string usage = "Usage:\n"
 "    -h, --help       | Show this help message.\n\n"
 "    -g, --ground     | Force ground computer mode. TECS assumes flight computer mode if absent.\n\n"
-"    --test-radio <s> | Run this instance in radio test mode. May be followed by a custom test string.\n\n"
-"    --modem      <#> | Selects the modem configuration to use. See below. Default 0.\n"
+"    --test-radio <s> | Run this instance in radio test mode. May be followed by a custom test string.\n"
+"    --interval   <#> | Sets the TX interval (in milliseconds) to use in testing. Default 1000 ms.\n\n"
+"    --modem  <x> <x> | Two bytes to configure the modem. Enter without leading \"0x\". Default 72 74.\n"
 "    --power      <#> | Set the TX power to use in flight mode. Valid range is 5 - 23. Default 23.\n"
 "    --no-prom        | Disables promiscuous mode. Be careful!\n"
 /*"    -t, --test   <s> | Run this instance in test mode. Must be followed by the test string.\n\n"
@@ -129,7 +128,7 @@ void run_rx_test() {
 					rx_status = "BAD_DATA";
 				}
 
-				printf("RECV %s <%ju> (#%d) [%02db, #%d>#%d, %ddB]: ", rx_status.c_str(), time(NULL), rxd_total, len, from, to, rssi);
+				printf("RECV %s <%d> (#%05d) [%02db, #%d>#%d, %ddB]: ", rx_status.c_str(), time(NULL), rxd_total, len, from, to, rssi);
 				printbuffer(buf, len);
 				printf("\n");
 			}
@@ -147,7 +146,7 @@ void run_rx_test() {
 
 void run_tx_test() {
 	unsigned long last_millis;
-	unsigned int tx_count;
+	unsigned int tx_count = 0;
 
 	// This is set so that the first message is fired after one second.
 	last_millis = millis() - (tx_interval - 1000);
@@ -162,12 +161,12 @@ void run_tx_test() {
 			//uint8_t len = sizeof(data);
 			uint8_t len = test_string.size();
 
-			printf("SEND <%ju> (#%d) [%02db, #%d>#%d]: ", time(NULL), tx_count, len, RF_FLIGHT_ID, RF_GROUND_ID);
-			printbuffer(data, len);
-			printf("\n");
-
 			rf95.send(data, len);
 			rf95.waitPacketSent();
+
+			printf("SEND <%d> (#%05d) [%02db, #%d>#%d]: ", time(NULL), ++tx_count, len, RF_FLIGHT_ID, RF_GROUND_ID);
+			printbuffer(data, len);
+			printf("\n");
 		}
 
 		// Free CPU for other tasks.
@@ -203,8 +202,10 @@ void setup_radio() {
 	// Defaults after init are 434.0MHz, 13dBm, Bw = 125 kHz, Cr = 4/5, Sf = 128chips/symbol, CRC on.
 
 	// Override default modem Bw, Cr, Sf, and CRC settings.
-	rf95.setModemConfig(static_cast<RH_RF95::ModemConfigChoice>(modem_config));
-	printf("Modem set to configuration #%d.\n", modem_config);
+	//rf95.setModemConfig(static_cast<RH_RF95::ModemConfigChoice>(modem_config));
+	//printf("Modem set to configuration #%d.\n", modem_config);
+	rf95.setModemRegisters(RH_RF95::ModemConfig(r1d, r1e, 0x00));
+	printf("Modem configuration: 0x1D = 0x%x, 0x1E = 0x%x.\n", r1d, r1e);
 
 	// The default transmitter power is 13dBm, using PA_BOOST.
 	// Important note: FCC regulations limit TX output power to 30 dBm.
@@ -257,6 +258,7 @@ void parse_args(int argc, const char* argv[]) {
 "    -h, --help       | Show this help message.\n\n"
 "    -g, --ground     | Force ground computer mode. TECS assumes flight computer mode if absent.\n\n"
 "    --test-radio <s> | Run this instance in radio test mode. Must be followed by the test string.\n\n"
+"    --interval   <#> | Sets the TX interval (in milliseconds) to use in testing. Default 1000 ms.\n\n"
 "    --modem      <#> | Selects the modem configuration to use. See below. Default 0.\n"
 "    --power      <#> | Set the TX power to use in flight mode. Valid range is 5 - 23. Default 23.\n"
 "    --no-prom        | Disables promiscuous mode. Be careful!\n"
@@ -282,11 +284,21 @@ void parse_args(int argc, const char* argv[]) {
 					test_string = argv[i + 1];
 			}
 
-			if(!strcmp(argv[i], "--modem")) {
+			if(!strcmp(argv[i], "--interval")) {
 				if(argc > i + 1 && argv[i + 1][0] != '-')
-					modem_config = atoi(argv[i + 1]);
+					tx_interval = atoi(argv[i + 1]);
 				else {
-					puts("--modem [i + 1] fail");
+					puts("--interval [i + 1] fail");
+					exit(EXIT_FAILURE);
+				}
+			}
+
+			if(!strcmp(argv[i], "--modem")) {
+				if(argc > i + 2 && argv[i + 1][0] != '-' && argv[i + 2][0] != '-' && strlen(argv[i + 1]) == 2 && strlen(argv[i + 2]) == 2) {
+					modem_config = atoi(argv[i + 1]);
+				}
+				else {
+					puts("--modem fail");
 					exit(EXIT_FAILURE);
 				}
 			}
@@ -330,6 +342,8 @@ int main(int argc, const char* argv[]) {
 
 	// We should never reach this point in flight conditions.
 	// Expect direct shutdown of the Raspberry Pi, with no gracefulness.
+
+	puts("WARN: broke loop! ground test?");
 
 	puts("Closing bcm2835 hook...\n");
 	bcm2835_close();
