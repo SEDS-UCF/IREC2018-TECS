@@ -176,8 +176,9 @@ void setup_radio() {
 	// Override default modem Bw, Cr, Sf, and CRC settings.
 	//rf95.setModemConfig(static_cast<RH_RF95::ModemConfigChoice>(modem_config));
 	//printf("Modem set to configuration #%d.\n", modem_config);
-	RH_RF95::ModemConfig cfig = {r1d, r1e, 0x00};
-	rf95.setModemRegisters(&cfig);
+	//RH_RF95::ModemConfig cfig = {r1d, r1e, 0x00};
+	//rf95.setModemRegisters(&cfig);
+	rf95.setModemConfig(RH_RF95::ModemConfigChoice::Bw125Cr45Sf128);
 	printf("Modem configuration: 0x1D = 0x%x, 0x1E = 0x%x.\n", rf95.spiRead(0x1d), rf95.spiRead(0x1e));
 
 	// The default transmitter power is 13dBm, using PA_BOOST.
@@ -338,8 +339,8 @@ void flight_loop() {
 				uint8_t* data = (uint8_t*)malloc(sizeof(uint8_t) * len);
 
 				data[0] = '\x5e';
-				data[1] = '\xd5';
 
+				data[1] = (uint8_t)unpack_int(group1, 8, false);
 				data[2] = (uint8_t)unpack_int(group1, 8, false);
 				data[3] = (uint8_t)unpack_int(group1, 8, false);
 				data[4] = (uint8_t)unpack_int(group1, 8, false);
@@ -347,8 +348,8 @@ void flight_loop() {
 				data[6] = (uint8_t)unpack_int(group1, 8, false);
 				data[7] = (uint8_t)unpack_int(group1, 8, false);
 				data[8] = (uint8_t)unpack_int(group1, 8, false);
-				data[9] = (uint8_t)unpack_int(group1, 8, false);
 				
+				data[9] = (uint8_t)unpack_int(group2, 8, false);
 				data[10] = (uint8_t)unpack_int(group2, 8, false);
 				data[11] = (uint8_t)unpack_int(group2, 8, false);
 				data[12] = (uint8_t)unpack_int(group2, 8, false);
@@ -356,7 +357,8 @@ void flight_loop() {
 				data[14] = (uint8_t)unpack_int(group2, 8, false);
 				data[15] = (uint8_t)unpack_int(group2, 8, false);
 				data[16] = (uint8_t)unpack_int(group2, 8, false);
-				data[17] = (uint8_t)unpack_int(group2, 8, false);
+
+				data[17] = '\xd5';
 
 				/*data[0] = (uint8_t)((group1 & ((uint64_t)0xFF << 56)) >> 56);
 				data[1] = (uint8_t)((group1 & ((uint64_t)0xFF << 48)) >> 48);

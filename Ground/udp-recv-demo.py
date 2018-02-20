@@ -2,6 +2,7 @@ import sys
 import socket
 import binascii
 import ctypes
+import bitstring
 from bitstring import BitArray, BitStream
 
 UDP_IP = "127.0.0.1"
@@ -13,8 +14,8 @@ sock.bind((UDP_IP, UDP_PORT))
 while True:
 	try:
 		data, addr = sock.recvfrom(1024)
-		data = data.split(b'\x5e\xd5')[1]
-		data = data.split(b'\r\n')[0]
+		data = data.split(b'\x5e')[1]
+		data = data.split(b'\xd5')[0]
 
 		tlm = BitStream(data)
 		print(tlm.bin)
