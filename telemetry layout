@@ -1,0 +1,21 @@
+00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+\  1 /\  2  /\  3  /\ 4  / \  5     /\    6    /\    7    /\     8     
+
+1 - [6]  flight profile state - (6-bit field)
+2 - [6]  error buffer - (6-bit field)
+3 - [6]  Ax - [-32, 31] - real values: [-20, 20]
+4 - [6]  Ay - [-32, 31] - real values: [-20, 20]
+5 - [9]  Az - [-256, 255] - real values: [-160, 160]
+6 - [10] Gx - [-512, 511] - real values: [-500, 500]
+7 - [10] Gy - [-512, 511] - real values: [-500, 500]
+8 - [12] Gz - [-2048, 2047] - real values: [-2000, 2000]
+
+00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+/\   9    /\   10   /\   11   /\    12     / \  13  / \  14  /  resrv.
+
+9  - [9]  roll  - [-256, 255] - real values: (-180, 180)
+10 - [9]  pitch - [-256, 255] - real values: (-180, 180)
+11 - [9]  yaw   - [-256, 255] - real values: (-180, 180)
+12 - [12] alt.  - [0, 4095] - real values: ~[0, 3200] (est. values. prob unsigned w/ addition)
+13 - [8]  temp. - [-128, 127] - real values: ~[-30, 100] (not sure if we'll go negative, add +30?)
+14 - [8]  volts - [0, 255] - real values: ~[20, 170] (looking at nominal maximum of 14-ish V)
