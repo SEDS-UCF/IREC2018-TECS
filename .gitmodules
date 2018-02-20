@@ -1,0 +1,3 @@
+[submodule "Flight/lib/RTIMULib2"]
+	path = Flight/lib/RTIMULib2
+	url = https://github.com/RTIMULib/RTIMULib2
