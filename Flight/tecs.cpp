@@ -290,6 +290,9 @@ void flight_loop() {
 
 			RTIMU_DATA mpu_mainData = mpu_main->getIMUData();
 
+			if (baro != NULL)
+				baro->pressureRead(mpu_mainData);
+
 			printf("roll=%f, pitch=%f, yaw=%f -- Ax=%f, Ay=%f, Az=%f -- Gx=%f, Gy=%f, Gz=%f\r", mpu_mainData.fusionPose.x() * RTMATH_RAD_TO_DEGREE,
 																		mpu_mainData.fusionPose.y() * RTMATH_RAD_TO_DEGREE,
 																		mpu_mainData.fusionPose.z() * RTMATH_RAD_TO_DEGREE,
