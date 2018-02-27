@@ -1,3 +1,6 @@
 [submodule "Flight/lib/RTIMULib2"]
 	path = Flight/lib/RTIMULib2
 	url = https://github.com/RTIMULib/RTIMULib2
+[submodule "Flight/lib/RadioHead"]
+	path = Flight/lib/RadioHead
+	url = https://github.com/hallard/RadioHead
