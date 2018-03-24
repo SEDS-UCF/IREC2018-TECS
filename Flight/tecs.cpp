@@ -37,8 +37,6 @@
 #define ERR_MPU_AUX_INIT_FAIL 0
 #define ERR_BCM_INIT_FAIL 0
 
-bool radio_test_mode = false; // Enables radio test mode.
-std::string test_string = "aXXYYZZgXXYYZZttPPaaVV"; // The test mode string.
 int tx_interval = 1000; // Interval between message sending in ms.
 
 int tx_power = 23; // TX power, valid range is 5 to 23.
@@ -50,9 +48,8 @@ std::string usage = "Usage:\n"
 "    -g, --ground     | Force ground computer mode. TECS assumes flight computer mode if absent.\n\n"
 "    --modem  <x> <x> | Two bytes to configure the modem. Enter without leading \"0x\". Default 72 74.\n"
 "    --power      <#> | Set the TX power to use in flight mode. Valid range is 5 - 23. Default 23.\n"
-"    --no-prom        | Disables promiscuous mode. Be careful!\n\n"
-"    --test       <s> | Run this instance in radio test mode. May be followed by a custom test string.\n"
-"    --interval   <#> | Sets the TX interval (in milliseconds) to use in testing. Default 1000 ms.\n";
+"    --no-prom        | Disables promiscuous mode. Be careful!\n"
+"    --interval   <#> | Sets the TX interval (in milliseconds). Default 1000 ms.\n";
 
 // Create an instance of a driver.
 RH_RF95 rf95(RF_CS_PIN, RF_IRQ_PIN);
@@ -116,40 +113,8 @@ void error(uint8_t err_code, bool err_fatal, bool err_noradio, std::string err_m
 		while(true) {}
 }
 
-void run_tx_test() {
-	unsigned long last_millis;
-	unsigned int tx_count = 0;
-
-	// This is set so that the first message is fired after one second.
-	last_millis = millis() - (tx_interval - 1000);
-
-	while (!exiting) {
-		// Limit sending to a specific time interval.
-		if (millis() - last_millis > tx_interval) {
-			last_millis = millis();
-
-			// Crafting the message.
-			uint8_t* data = (uint8_t*)test_string.data();
-			//uint8_t len = sizeof(data);
-			uint8_t len = test_string.size();
-
-			rf95.send(data, len);
-			rf95.waitPacketSent();
-
-			printf("SEND <%d> (#%05d) [%02db]: ", time(NULL), ++tx_count, len);
-			printbuffer(data, len);
-			printf("\n");
-		}
-
-		// Free CPU for other tasks.
-		bcm2835_delay(50);
-	}
-}
-
 void setup_radio() {
 	puts("Initializing RFM95 radio module...");
-
-	//printf("Verify RFM95 pins connected: CS=GPIO%d, IRQ=GPIO%d, RST=GPIO%d", RF_CS_PIN, RF_IRQ_PIN, RF_RST_PIN);
 
 	// Set IRQ Pin as input/pull down.
 	// IRQ Pin input/pull down
@@ -211,20 +176,6 @@ void setup_radio() {
 }
 
 void parse_args(int argc, const char* argv[]) {
-/*	if(argc < 2) {
-		puts(usage.c_str());
-		exit(EXIT_FAILURE);
-	}*/
-
-/*
-"    -h, --help       | Show this help message.\n\n"
-"    -g, --ground     | Force ground computer mode. TECS assumes flight computer mode if absent.\n\n"
-"    --test-radio <s> | Run this instance in radio test mode. Must be followed by the test string.\n\n"
-"    --interval   <#> | Sets the TX interval (in milliseconds) to use in testing. Default 1000 ms.\n\n"
-"    --modem      <#> | Selects the modem configuration to use. See below. Default 0.\n"
-"    --power      <#> | Set the TX power to use in flight mode. Valid range is 5 - 23. Default 23.\n"
-"    --no-prom        | Disables promiscuous mode. Be careful!\n"
-*/
 	for(int i = 0; i < argc; i++) {
 		if(argv[i][0] == '-') {
 			if(!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
@@ -234,12 +185,6 @@ void parse_args(int argc, const char* argv[]) {
 
 			if(!strcmp(argv[i], "--no-prom")) {
 				is_prom = false;
-			}
-
-			if(!strcmp(argv[i], "--test")) {
-				radio_test_mode = true;
-				if(argc > i + 1 && argv[i + 1][0] != '-')
-					test_string = argv[i + 1];
 			}
 
 			if(!strcmp(argv[i], "--interval")) {
@@ -363,24 +308,6 @@ void flight_loop() {
 
 				data[17] = '\xd5';
 
-				/*data[0] = (uint8_t)((group1 & ((uint64_t)0xFF << 56)) >> 56);
-				data[1] = (uint8_t)((group1 & ((uint64_t)0xFF << 48)) >> 48);
-				data[2] = (uint8_t)((group1 & ((uint64_t)0xFF << 40)) >> 40);
-				data[3] = (uint8_t)((group1 & ((uint64_t)0xFF << 32)) >> 32);
-				data[4] = (uint8_t)((group1 & ((uint64_t)0xFF << 24)) >> 24);
-				data[5] = (uint8_t)((group1 & ((uint64_t)0xFF << 16)) >> 16);
-				data[6] = (uint8_t)((group1 & ((uint64_t)0xFF << 8)) >> 8);
-				data[7] = (uint8_t)(group1 & ((uint64_t)0xFF));
-
-				data[8] = (uint8_t)((group2 & ((uint64_t)0xFF << 56)) >> 56);
-				data[9] = (uint8_t)((group2 & ((uint64_t)0xFF << 48)) >> 48);
-				data[10] = (uint8_t)((group2 & ((uint64_t)0xFF << 40)) >> 40);
-				data[11] = (uint8_t)((group2 & ((uint64_t)0xFF << 32)) >> 32);
-				data[12] = (uint8_t)((group2 & ((uint64_t)0xFF << 24)) >> 24);
-				data[13] = (uint8_t)((group2 & ((uint64_t)0xFF << 16)) >> 16);
-				data[14] = (uint8_t)((group2 & ((uint64_t)0xFF << 8)) >> 8);
-				data[15] = (uint8_t)(group2 & ((uint64_t)0xFF));*/
-
 				std::cout << std::hex << data;
 
 				rf95.send(data, len);
@@ -445,11 +372,6 @@ int main(int argc, const char* argv[]) {
 	}
 
 	setup_radio();
-
-	if(radio_test_mode) {
-		puts("\nEntering radio test mode...\n");
-		run_tx_test();
-	}
 
 	flight_loop();
 
